@@ -1,0 +1,14 @@
+# Dataset
+
+
+
+# Model
+seq_len: 1500
+codec_sample_rate: 50
+num_embedding: 512
+input_dim: 1024
+
+
+# Training
+batch_size: 16
+num_workers: 2

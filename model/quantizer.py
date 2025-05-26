@@ -1,5 +1,4 @@
 # ref: https://github.com/youngsheen/SimVQ/blob/main/taming/modules/vqvae/quantize.py
-# %%
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -184,4 +183,3 @@ class SimVQ1D(SimVQ):
                 z_q.shape[0], z_q.shape[2], z_q.shape[3])
 
         return (z_q, torch.tensor(0.0), min_encoding_indices), LossBreakdown(torch.tensor(0.0), torch.tensor(0.0), commit_loss, torch.tensor(0.0))
-# %%

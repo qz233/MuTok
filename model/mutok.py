@@ -2,10 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from quantizer import SimVQ1D
-from transformer import Encoder, Decoder
-
-from minrf import RF
+from .quantizer import SimVQ1D
+from .transformer import Encoder, Decoder
+from .minrf import RF
 
 
 class Mutok(nn.Module):
@@ -20,17 +19,14 @@ class Mutok(nn.Module):
         self.quantizer = SimVQ1D(config.num_embedding, 8)
         self.rf_decoder = RF(self.decoder, ln=True)
 
-        self.in_proj = nn.Linear(config.input_dim, config.num_embedding)
-        self.out_proj = nn.Linear(config.num_embedding, config.output_dim)
     def forward(self, x):
         # in the forward pass, we reconstrunct the input and calculate 
         # the reconstruction loss as well as other losses.
-        x = self.in_proj(x)
-        B, L, C = x.shape
+        B, L, _ = x.shape
         z, register = self.encoder(x)
 
-        # average every second's feature, and quantize it
-        z = z.reshape((B, L // self.codec_sample_rate, self.codec_sample_rate, C)).mean(dim=2)
+        # average every second music feature, and quantize it
+        z = z.reshape((B, L // self.codec_sample_rate, self.codec_sample_rate, self.config.num_embedding)).mean(dim=2)
         z = torch.cat((z, register), dim=1)
         (z_q, _, indices), vq_loss = self.quantizer(z)
 
@@ -38,7 +34,7 @@ class Mutok(nn.Module):
         if torch.random.rand() < self.cf_prob:
             z_q = torch.zeros_like(z_q)
 
-        # denoise training
+        # denoise
         reconstruction_loss, loss_info = self.rf_decoder(x, z_q)
         return reconstruction_loss + vq_loss
 
@@ -47,20 +43,21 @@ class Mutok(nn.Module):
         null_condition = torch.zeros_like(z_q)
         B, L, C = z_q.shape
         noise = torch.randn((B, L * self.codec_sample_rate, C)).to(z_q.device)
-
+        # rectified flow ode sampling
         return self.rf_decoder.inference(noise, z_q, 
                                          null_cond=null_condition, 
                                          cfg=getattr(self.config, 'cfg', 2.0))
     
-    def reconstruction(self, x):
-        x = self.in_proj(x)
-        B, L, C = x.shape
+    def encode(self, x):
+        B, L, _ = x.shape
         z, register = self.encoder(x)
 
-        # average every second's feature, and quantize it
-        z = z.reshape((B, L // self.codec_sample_rate, self.codec_sample_rate, C)).mean(dim=2)
+        # average every second music feature, and quantize it
+        z = z.reshape((B, L // self.codec_sample_rate, self.codec_sample_rate, self.config.num_embedding)).mean(dim=2)
         z = torch.cat((z, register), dim=1)
         (z_q, _, indices), vq_loss = self.quantizer(z)
-
+        return indices
+    def reconstruction(self, x):
+        indices = self.encode(x)
         return self.inference(indices)
     

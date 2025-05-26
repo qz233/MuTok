@@ -1,5 +1,4 @@
 #ref: https://github.com/karpathy/nanoGPT/blob/master/model.py
-from atexit import register
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -87,10 +86,14 @@ class Encoder(nn.Module):
         super().__init__()
         self.config = config
         self.max_seq_len = config.max_seq_len
+
         self.pe = SinusoidalPositionalEmbedding(config.num_embedding, self.max_seq_len)
         self.register_tokens = nn.Embedding(config.num_register_tokens, config.num_embedding)
+        
         self.attention_blocks = nn.ModuleList([AttentionBlock(config.num_embedding, config.num_heads) for _ in range(config.encoder_num_layers)])
+        self.in_proj = nn.Linear(config.input_dim, config.num_embedding)
     def forward(self, x):
+        x = self.in_proj(x)
         B, L, _ = x.shape
         x = self.pe(x)
         # apply pe before concat registers, because they are global tokens.
@@ -108,14 +111,18 @@ class Decoder(nn.Module):
         self.config = config
         self.max_seq_len = config.max_seq_len
         self.token_len = config.max_seq_len // config.codec_sample_rate
+        
         self.pe = SinusoidalPositionalEmbedding(config.num_embedding, self.max_seq_len)
+
         self.attention_blocks = nn.ModuleList([AttentionBlock(config.num_embedding, config.num_heads, norm=DecoderAdaLN) for _ in range(config.encoder_num_layers)])
+        self.out_proj = nn.Linear(config.num_embedding, config.input_dim)
     def forward(self, x, ts, condition):
         condition, registers = condition[:, :self.token_len], condition[:, self.token_len:]
         x = self.pe(x)
         x = torch.cat((x, registers), dim=1)
         for block in self.attention_blocks:
             x = block(x, ts, condition)
+        x = self.out_proj(x)
         return x
 
 
