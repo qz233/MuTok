@@ -1,10 +1,10 @@
 # ref: https://github.com/cloneofsimo/minRF/blob/main/rf.py
-
 import torch
+import torch.nn as nn
 
-
-class RF:
+class RF(nn.Module):
     def __init__(self, model, ln=True):
+        super().__init__()
         self.model = model
         self.ln = ln
 
@@ -20,6 +20,7 @@ class RF:
         zt = (1 - texp) * x + texp * z1
         vtheta = self.model(zt, t, cond)
         batchwise_mse = ((z1 - x - vtheta) ** 2).mean(dim=list(range(1, len(x.shape))))
+        print(z1, x, vtheta)
         tlist = batchwise_mse.detach().cpu().reshape(-1).tolist()
         ttloss = [(tv, tloss) for tv, tloss in zip(t, tlist)]
         return batchwise_mse.mean(), ttloss

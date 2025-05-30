@@ -17,9 +17,8 @@ class XCodecWrapper(SoundStream):
         self.requires_grad_(False)
 
 
-    def encode_continuous(self, audio_arr): 
-        audio_arr *= self.xcodec_config.audio_norm_scale
-        x = audio_arr.unsqueeze(1)
+    def encode_continuous(self, x): 
+        x *= self.xcodec_config.audio_norm_scale
 
         e_semantic_input = self.get_regress_target(x).detach()
         e_semantic = self.encoder_semantic(e_semantic_input.transpose(1, 2))
@@ -28,9 +27,9 @@ class XCodecWrapper(SoundStream):
         if e_acoustic.shape[2] != e_semantic.shape[2]:
             e_acoustic = self.encoder(F.pad(x[:,0,:], (160, 160)).unsqueeze(0)) 
         e= torch.cat([e_acoustic, e_semantic], dim=1)
-        e = self.fc_prior(e.transpose(1, 2)).transpose(1, 2)
+        e = self.fc_prior(e.transpose(1, 2))   #.transpose(1, 2)  Because we expect (B, L, C)
         return e
 
     def decode_continuous(self, latent):
-        quantized_acoustic = self.fc_post2(latent.transpose(1, 2)).transpose(1, 2)
+        quantized_acoustic = self.fc_post2(latent).transpose(1, 2)
         return self.decoder_2(quantized_acoustic)

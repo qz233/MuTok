@@ -9,6 +9,7 @@ from .minrf import RF
 
 class Mutok(nn.Module):
     def __init__(self, config):
+        super().__init__()
         self.config = config
         self.seq_len = config.seq_len
         self.codec_sample_rate = config.codec_sample_rate
@@ -16,27 +17,29 @@ class Mutok(nn.Module):
 
         self.encoder = Encoder(config)
         self.decoder = Decoder(config)
-        self.quantizer = SimVQ1D(config.num_embedding, 8)
+        self.quantizer = SimVQ1D(config.codebook_size, config.num_embedding)
         self.rf_decoder = RF(self.decoder, ln=True)
 
     def forward(self, x):
+        # x[1500, 512]
         # in the forward pass, we reconstrunct the input and calculate 
         # the reconstruction loss as well as other losses.
         B, L, _ = x.shape
         z, register = self.encoder(x)
-
+        # z[1500, 512]
         # average every second music feature, and quantize it
         z = z.reshape((B, L // self.codec_sample_rate, self.codec_sample_rate, self.config.num_embedding)).mean(dim=2)
         z = torch.cat((z, register), dim=1)
         (z_q, _, indices), vq_loss = self.quantizer(z)
 
         # classifer-free guidance training
-        if torch.random.rand() < self.cf_prob:
+        if torch.rand((1,)).item() < self.cfg_dropout_rate:
             z_q = torch.zeros_like(z_q)
 
         # denoise
         reconstruction_loss, loss_info = self.rf_decoder(x, z_q)
-        return reconstruction_loss + vq_loss
+        print(loss_info, vq_loss.commitment)
+        return reconstruction_loss + vq_loss.commitment
 
     def inference(self, tokens):
         z_q = self.quantizer.get_codebook_entry(tokens, shape=None)

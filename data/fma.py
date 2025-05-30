@@ -43,7 +43,7 @@ class FMADataset(Dataset):
     def __init__(self, config):
         self.config = config
         self.dataset_path = getattr(config, "dataset_path", "./cache/free_music_archive")
-        self.sr = getattr(config, "sr", 16000)
+        self.sr = getattr(config, "sample_rate", 16000)
         self.wav_window_len = config.seq_len // config.codec_sample_rate * self.sr
         files = os.listdir(self.dataset_path)
         self.mp3s = []
@@ -93,10 +93,9 @@ class Config:
     codec_sample_rate = 50
     dataset_path = "../cache/free_music_archive"
     batch_size = 16
-    num_workers = 8
+    num_workers = 4
 
 if __name__ == "__main__":
-
     config = Config()
     dataloader = get_dataloader(config)
     for x in tqdm(dataloader):

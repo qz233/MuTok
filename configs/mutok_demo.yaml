@@ -1,12 +1,18 @@
 # Dataset
+dataset_path: "./cache/free_music_archive"
 
-
+# Codec
+sample_rate: 16000
+codec_sample_rate: 50
+input_dim: 1024
 
 # Model
 seq_len: 1500
-codec_sample_rate: 50
+encoder_num_layers: 6
+decoder_num_layers: 8
 num_embedding: 512
-input_dim: 1024
+num_register_tokens: 10
+codebook_size: 8192
 
 
 # Training
