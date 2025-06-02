@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .quantizer import SimVQ1D
-from .transformer import Encoder, Decoder
+from .transformer import Encoder, MutokDecoder
 from .minrf import RF
 
 
@@ -16,7 +16,7 @@ class Mutok(nn.Module):
         self.cfg_dropout_rate = getattr(config, "cfg_dropout_rate", 0.1)
 
         self.encoder = Encoder(config)
-        self.decoder = Decoder(config)
+        self.decoder = MutokDecoder(config)
         self.quantizer = SimVQ1D(config.codebook_size, config.num_embedding)
         self.rf_decoder = RF(self.decoder, ln=True)
 

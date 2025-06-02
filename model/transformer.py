@@ -8,14 +8,18 @@ from diffusers.models.embeddings import SinusoidalPositionalEmbedding, Timesteps
 
 class DecoderAdaLN(nn.Module):
     # Add the conditional information and ts though adaptive layer norm.
-    def __init__(self, hidden_dim):
+    def __init__(self, hidden_dim, use_register=False):
         super().__init__()
+        self.use_register = use_register
+
         self.timestep = Timesteps(256, flip_sin_to_cos=True, downscale_freq_shift=1)
         self.timestep_embedder = TimestepEmbedding(in_channels=256, time_embed_dim=hidden_dim)
-        self.register_embedding = nn.Embedding(1, hidden_dim)
         self.condition_proj = nn.Linear(hidden_dim, hidden_dim)
         self.norm_proj = nn.Linear(hidden_dim, hidden_dim * 2)
         self.norm = nn.LayerNorm(hidden_dim)
+        if use_register:
+            self.register_embedding = nn.Embedding(1, hidden_dim)
+
     def forward(self, x, timestep, condition):
         num_registers = x.shape[1] - condition.shape[1]
         B = x.shape[0]
@@ -25,8 +29,9 @@ class DecoderAdaLN(nn.Module):
         # condition
         condition = self.condition_proj(condition)
         # register
-        reg_embedding = self.register_embedding.weight.unsqueeze(0).expand((B, num_registers, -1))
-        condition = torch.cat([condition, reg_embedding], dim=1)
+        if self.use_register:
+            reg_embedding = self.register_embedding.weight.unsqueeze(0).expand((B, num_registers, -1))
+            condition = torch.cat([condition, reg_embedding], dim=1)
         emb = self.norm_proj(F.silu(ts.unsqueeze(1) + condition))
         # ada norm
         scale, shift = emb.chunk(2, dim=-1)
@@ -78,11 +83,15 @@ class MLP(nn.Module):
         return x
 
 class AttentionBlock(nn.Module):
-    def __init__(self, num_embedding, num_heads, norm=nn.LayerNorm, dropout_p=0.0, is_casual=False):
+    def __init__(self, num_embedding, num_heads, norm=nn.LayerNorm, dropout_p=0.0, is_casual=False, use_register=False):
         super().__init__()
-        self.ln_1 = norm(num_embedding)
+        if norm is DecoderAdaLN:
+            self.ln_1 = norm(num_embedding, use_register=use_register)
+            self.ln_2 = norm(num_embedding, use_register=use_register)
+        else:
+            self.ln_1 = norm(num_embedding)
+            self.ln_2 = norm(num_embedding)
         self.attn = Attention(num_embedding, num_heads, is_casual=is_casual, dropout_p=dropout_p)
-        self.ln_2 = norm(num_embedding)
         self.mlp = MLP(num_embedding, dropout_p=dropout_p)
 
     def forward(self, x, ts=None, condition=None):
@@ -96,33 +105,65 @@ class AttentionBlock(nn.Module):
         return x
 
 class Encoder(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, use_register=True):
         super().__init__()
         self.config = config
         self.seq_len = config.seq_len
 
         self.pe = SinusoidalPositionalEmbedding(config.num_embedding, self.seq_len)
-        self.register_tokens = nn.Embedding(config.num_register_tokens, config.num_embedding)
+        if use_register:
+            self.register_tokens = nn.Embedding(config.num_register_tokens, config.num_embedding)
         
         self.attention_blocks = nn.ModuleList([
             AttentionBlock(config.num_embedding, config.num_heads, dropout_p=config.dropout_p) 
             for _ in range(config.encoder_num_layers)
         ])
         self.in_proj = nn.Linear(config.input_dim, config.num_embedding)
+
     def forward(self, x):
         x = self.in_proj(x)
         B, L, _ = x.shape
         x = self.pe(x)
+        
         # apply pe before concat registers, because they are global tokens.
-        registers = self.register_tokens.weight.expand((B , -1, -1))
-        x = torch.cat((x, registers), dim=1)
+        if hasattr(self, "register_tokens"):
+            registers = self.register_tokens.weight.expand((B , -1, -1))
+            x = torch.cat((x, registers), dim=1)
+        
         for block in self.attention_blocks:
             x = block(x)
-        # seperately return music tokens and register tokens
-        return x[:, :L], x[:, L:]
+
+        if hasattr(self, "register_tokens"):    
+            # seperately return music tokens and register tokens
+            return x[:, :L], x[:, L:]
+        else:
+            return x
+
+class SimpleDecoder(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.seq_len = config.seq_len        
+        self.pe = SinusoidalPositionalEmbedding(config.num_embedding, self.seq_len)
+
+        self.attention_blocks = nn.ModuleList([
+            AttentionBlock(config.num_embedding, config.num_heads, norm=DecoderAdaLN, dropout_p=config.dropout_p)
+            for _ in range(config.decoder_num_layers)
+        ])
+        self.in_proj = nn.Linear(config.input_dim, config.num_embedding)
+        self.out_proj = nn.Linear(config.num_embedding, config.input_dim)
+    
+    def forward(self, x, ts, condition):
+        x = self.in_proj(x)
+        x = self.pe(x)
+        for block in self.attention_blocks:
+            x = block(x, ts, condition)
+        x = self.out_proj(x)
+        return x[:, :self.seq_len]
 
 
-class Decoder(nn.Module):
+
+class MutokDecoder(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -132,11 +173,12 @@ class Decoder(nn.Module):
         self.pe = SinusoidalPositionalEmbedding(config.num_embedding, self.seq_len)
 
         self.attention_blocks = nn.ModuleList([
-            AttentionBlock(config.num_embedding, config.num_heads, norm=DecoderAdaLN, dropout_p=config.dropout_p)
+            AttentionBlock(config.num_embedding, config.num_heads, norm=DecoderAdaLN, dropout_p=config.dropout_p, use_register=True)
             for _ in range(config.decoder_num_layers)
         ])
         self.in_proj = nn.Linear(config.input_dim, config.num_embedding)
         self.out_proj = nn.Linear(config.num_embedding, config.input_dim)
+    
     def forward(self, x, ts, condition):
         # expand latent tokens
         condition, registers = condition[:, :self.token_len], condition[:, self.token_len:]

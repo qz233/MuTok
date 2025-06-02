@@ -82,7 +82,7 @@ class FMADataset(Dataset):
 
         return wav
 
-def get_dataloader(config):
+def get_fma_dataloader(config):
     dataset = FMADataset(config)
     dataloader = DataLoader(dataset, batch_size=config.batch_size, 
                             shuffle=True, num_workers=config.num_workers)

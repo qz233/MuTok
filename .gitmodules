@@ -1,0 +1,3 @@
+[submodule "xcodec"]
+	path = xcodec
+	url = https://github.com/zhenye234/xcodec.git
