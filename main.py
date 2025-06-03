@@ -19,6 +19,7 @@ def train(config):
     print('Initializing models')
     model = DrumRFDiT(config)
     codec = XCodecWrapper(config).requires_grad_(False)
+    codec.eval()
     trainer = Trainer(model, codec, train_dataset, valid_dataset, config)
     trainer.train()
 

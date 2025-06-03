@@ -77,9 +77,11 @@ class Trainer():
         self.codec = self.codec.to(self.device)
         if train_dataloader:
             self._train_preparation()
+            self.upload_ground_truth_sample()
         #print(f"{self.device=}, {is_main_process()=}")
         print(f"Model num param: {sum(x.nelement() for x in model.parameters()) // (2 ** 20)} M")
-        self.upload_ground_truth_sample()
+        
+
 
     
     def _train_preparation(self):
@@ -136,6 +138,25 @@ class Trainer():
             "scheduler": self.scheduler.state_dict()
         }
         torch.save(state_dict, path)
+    
+    def predict(self,):
+        import soundfile as sf
+        output_path = self.config.output_path
+        B = self.valid_dataloader.batch_size
+        max_pred_num = 200
+        self.model.eval()
+        with torch.no_grad():
+            for step, (drum, main) in enumerate(tqdm(self.valid_dataloader)):
+                if step * B >= max_pred_num:
+                    break
+                main = main.to(self.device)
+                main = self.codec.encode_continuous(main)
+                gen_drum_latent = self.model.inference(main)   
+                gen_drum = self.codec.decode_continuous(gen_drum_latent)
+                gen_wav = gen_drum.cpu().numpy()
+                for i in range(B):
+                    sf.write(os.path.join(output_path, f"{step * B + i:04d}.wav"), gen_wav[i].T, 16000)
+                
 
     def load_training_state(self, path):
         state_dict = torch.load(path, map_location="cpu", weights_only=False)

@@ -1,15 +1,15 @@
 # Training
 launch_name: drumdit_v1_large
 device: cuda
-epoches: 15
+epoches: 16
 log_dir: "./training_log"
 model_cache: "/data/haoyun/mutok/model_cache"
 log_frequency: 25
 checkpoint_frequency: 3
-learning_rate: 1e-4
-resume_from_checkpoint: /data/haoyun/mutok/model_cache/drumdit_v1_large/3step.pt
+learning_rate: 5e-5
+resume_from_checkpoint: /data/haoyun/mutok/model_cache/drumdit_v1_large/latest.pt
 gradient_accumulation_steps: 2
-warmup_step: 200
+warmup_step: 0
 
 # Dataset
 train_dataset_path: "/data/haoyun/mutok/drum_ds"

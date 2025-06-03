@@ -37,4 +37,5 @@ class DrumRFDiT(nn.Module):
         # rectified flow ode sampling
         return self.rf_decoder.sample(noise, cond, 
                                          null_cond=null_cond, 
-                                         cfg=getattr(self.config, 'cfg', 2.0))
+                                         cfg=getattr(self.config, 'cfg', 2.0),
+                                         sample_steps=getattr(self.config, 'sample_steps', 50))

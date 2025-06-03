@@ -2,10 +2,8 @@
 import os
 import numpy as np
 import torch
-import torchaudio
 from torch.utils.data import Dataset, DataLoader
 import pandas as pd
-import tempfile
 import json
 from tqdm import tqdm
 import wave
@@ -16,6 +14,8 @@ def read_wav_segment(file_path, start_frame, duration):
     with sf.SoundFile(file_path) as f:
         f.seek(start_frame)
         segment = f.read(duration, dtype='float32')
+    if segment.ndim == 1:
+        segment = segment[:, None]
     segment = torch.from_numpy(segment.T).float()
     segment = segment.mean(dim=0, keepdim=True).float()
     return segment
@@ -34,7 +34,10 @@ def fix_shape(wav, length):
 class DrumDataset(Dataset):
     def __init__(self, config, type):
         self.config = config
+        self.type = type
         self.dataset_path = getattr(config, f"{type}_dataset_path", "./cache/free_music_archive")
+        if type == "valid":
+            np.random.seed(114)
         self.sr = getattr(config, "sample_rate", 16000)
         self.wav_window_len = config.seq_len // config.codec_sample_rate
         files = os.listdir(self.dataset_path)
@@ -69,12 +72,15 @@ class DrumDataset(Dataset):
         meta = self.metadata[wav_idx]
 
         # reject sample a valid window
-        invalid = True
-        while invalid:
-            start = np.random.rand() * meta["valid_t"][-1, 1]
-            for drum_start, drum_end in meta["valid_t"]:
-                if drum_start < start and start + self.wav_window_len < drum_end:
-                    invalid = False
+        if self.type == "valid":
+            start = 0
+        else:
+            invalid = True
+            while invalid:
+                start = np.random.rand() * meta["valid_t"][-1, 1]
+                for drum_start, drum_end in meta["valid_t"]:
+                    if drum_start < start and start + self.wav_window_len < drum_end:
+                        invalid = False
 
         drum = read_wav_segment(os.path.join(self.dataset_path, "drum", meta["file"]), 
                                 start_frame=start * self.sr,
@@ -95,12 +101,12 @@ def get_drum_dataloader(config, type):
 class Config:
     seq_len = 1000
     codec_sample_rate = 50
-    train_dataset_path = "/data/haoyun/drum_ds"
+    valid_dataset_path = "/data/haoyun/mutok/drum_test_clipped"
     batch_size = 16
     num_workers = 0
 # %%
 if __name__ == "__main__":
     config = Config()
-    dataloader = get_drum_dataloader(config, "train")
+    dataloader = get_drum_dataloader(config, "valid")
     for x in tqdm(dataloader):
        pass
